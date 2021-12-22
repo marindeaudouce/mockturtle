@@ -10,6 +10,7 @@
 #include "../networks/aig.hpp"
 #include "../views/depth_view.hpp"
 #include "../views/topo_view.hpp"
+#include <tuple>
 
 namespace mockturtle
 {
@@ -117,212 +118,109 @@ private:
   /* Try the distributivity rule on node n. Return true if the network is updated. */
   bool try_distributivity( node n )
   {
+    std::vector<signal> signal_lv1, signal_lv2_nA, signal_lv2_nB;
+    node A, B;
 
-    aig_network aig;
-
-    std::vector<signal> sigLv1;
-    std::vector<signal> sigLv2A;
-    std::vector<signal> sigLv2B;
-
-    node A;
-    node B;
-
-    ntk.foreach_fanin( n, [&]( signal sig )
-                       { sigLv1.push_back( sig ); } ); //Extracts the fanin signals
-
-    if ( sigLv1.size() != 2 )
-      return false; //No optimization if we don't have 2 fanin signals
-
-    A = ntk.get_node( sigLv1[0] );
-    B = ntk.get_node( sigLv1[1] );
-
-    ntk.foreach_fanin( A, [&]( signal sig )
-                       { sigLv2A.push_back( sig ); } );
-    ntk.foreach_fanin( B, [&]( signal sig )
-                       { sigLv2B.push_back( sig ); } );
-
-    if ( sigLv2A.size() != 2 || sigLv2B.size() != 2 || ntk.is_complemented( sigLv1[0] ) != ntk.is_complemented( sigLv1[1] ) )
-      return false;
-    if ( ntk.fanout_size( A ) != 1 || ntk.fanout_size( B ) != 1 )
+    // Extract the fanins of node n and check that there are 2 fanins
+    ntk.foreach_fanin(n, [&](signal sig){signal_lv1.push_back(sig);});
+    if(signal_lv1.size() != 2)
       return false;
 
-    signal comon;
-    signal sigA;
-    signal sigB;
+    A = ntk.get_node(signal_lv1.at(0));
+    B = ntk.get_node(signal_lv1.at(1));
 
-    int i = 0;
-    int j = 0;
-    bool stop = false;
+    // Extract fanins of fanins
+    ntk.foreach_fanin(A, [&](signal sig){signal_lv2_nA.push_back(sig);});
+    ntk.foreach_fanin(B, [&](signal sig){signal_lv2_nB.push_back(sig);});
+
+    if(signal_lv2_nA.size() != 2 || signal_lv2_nB.size() != 2)
+      return false;
+    //if(ntk.is_complemented(signal_lv1.at(0)) != ntk.is_complemented(signal_lv1.at(1))) return false; // unusefull
+    if(ntk.fanout_size(A) != 1 || ntk.fanout_size(B) != 1)
+      return false;
+
+    signal common, sig_in1, sig_in2;
     bool find = false;
-
-    while ( (!stop) && ( !find ) )
-    {
-      if ( sigLv2A[i] == sigLv2B[j])
-      {
-        find = true;
-        comon = sigLv2A[i];
-        if ( i == 0 )
-          sigA = sigLv2A[1];
-        else
-          sigA = sigLv2A[0];
-
-        if ( i == 0 )
-          sigB = sigLv2B[1];
-        else
-          sigB = sigLv2B[0];
-      }
-
-      if ( i == 1 && j == 1 )
-      {
-        stop = true;
-      }
-      else if ( i == 1)
-      {
-        j = j + 1;
-        i = 0;
-      }
-      else
-      {
-        i = i + 1;
+    // Is there a common fanins of fanins ?
+    for(int i=0; i<2; i++){
+      for(int j=0; j<2; j++){
+        if(signal_lv2_nA.at(i) == signal_lv2_nB.at(j)){
+          common = signal_lv2_nA.at(i);
+          if(i==0){
+            sig_in1 = signal_lv2_nA.at(1);
+            sig_in2 = signal_lv2_nB.at(1);
+          }else{
+            sig_in1 = signal_lv2_nA.at(0);
+            sig_in2 = signal_lv2_nB.at(0);
+          }
+          find = true;
+        }
       }
     }
 
-    if ( !find )
+    // No common fanins of fanins
+    if(!find)
       return false;
 
-    signal tmp;
-    inv_output( n );
+    invert_outputs(n);
 
-    if ( ntk.is_complemented( sigLv1[0] ) )
-      tmp = !comon;
+    if(ntk.is_complemented(signal_lv1.at(0)))
+      ntk.replace_in_node(n, A, !common);
     else
-      tmp = comon;
-    ntk.replace_in_node( n, A, tmp );
+      ntk.replace_in_node(n, A, common);
 
-    if ( ntk.is_complemented( comon ))
-      tmp = sigA;
+    if(ntk.is_complemented(common))
+      ntk.replace_in_node(B, ntk.get_node(common), sig_in1);
     else
-      tmp = !sigA;
-    ntk.replace_in_node( B, ntk.get_node( comon ), tmp );
+      ntk.replace_in_node(B, ntk.get_node(common), !sig_in1);
 
-    if ( ntk.is_complemented( sigB ) )
-      tmp = sigB;
+    if(ntk.is_complemented(sig_in2))
+      ntk.replace_in_node(B, ntk.get_node(sig_in2), sig_in2);
     else
-      tmp = !sigB;
-    ntk.replace_in_node( B, ntk.get_node( sigB ), tmp );
+      ntk.replace_in_node(B, ntk.get_node(sig_in2), !sig_in2);
 
-    ntk.take_out_node( A );
+    ntk.take_out_node(A); //Remove a node from the hash table
 
     return true;
-
   }
 
-  void inv_output(node const& n)
+  void invert_outputs(node const& n)
   {
-    std::vector<signal> outS = foreach_fanout_sig_node( n );
-    std::vector<node> nd = foreach_fanout_node( n );
+    std::vector<node> nodeOut;
+    std::vector<signal> node_signalOut;
+    ntk.foreach_node([&](node n)
+      {
+        ntk.foreach_fanin(n, [&](signal sig)
+        {
+          if(ntk.get_node(sig) == n){
+            nodeOut.push_back(n);
+            node_signalOut.push_back(sig);
+          }
+        });
+      });
 
-    for ( int i = 0; i < outS.size(); i++ )
-    {
-
-      if ( ntk.is_complemented( outS[i] ) )
-        ntk.replace_in_node( nd[i], n, outS[i] );
+    for(int i = 0; i < node_signalOut.size(); i++){
+      if(ntk.is_complemented(node_signalOut.at(i)))
+        ntk.replace_in_node(nodeOut.at(i), n, node_signalOut.at(i));
       else
-        ntk.replace_in_node( nd[i], n, !outS[i] );
-
+        ntk.replace_in_node(nodeOut.at(i), n, !node_signalOut.at(i));
     }
-    outS = foreach_fanout_PO( n );
 
-    for ( int i = 0; i < outS.size(); i++ )
-    {
+    std::vector<signal> signal_PO;
+    ntk.foreach_po([&](signal sig)
+     {
+       if(ntk.get_node(sig) == n)
+         signal_PO.push_back(sig);
+     });
 
-      if ( ntk.is_complemented( outS[i] ) )
-        ntk.replace_in_outputs( n, outS[i] );
+    for(int i = 0; i < signal_PO.size(); i++){
+      if(ntk.is_complemented(signal_PO.at(i)))
+        ntk.replace_in_outputs(n, signal_PO.at(i));
       else
-        ntk.replace_in_outputs( n, !outS[i] );
-
+        ntk.replace_in_outputs(n, !signal_PO.at(i));
     }
+
   }
-
-  std::vector<node> foreach_fanout_node(node const& n)
- {
-   std::vector<node> nodOut;
-   ntk.foreach_node( [&]( node nd )
-       {
-           ntk.foreach_fanin( nd, [&]( signal sig )
-               {
-                   if ( ntk.get_node( sig ) == n )
-                       nodOut.push_back( nd );
-               } );
-       } );
-
-   return nodOut;
- }
-
-   std::string getType(node const&n)
-   {
-     if ( ntk.is_and( n ) )
-       return "AND ";
-     else if ( ntk.is_pi( n ) )
-       return "PI ";
-     else
-       return "? ";
-
-   }
-
-   std::string getInv( signal const& sig)
-   {
-     if ( ntk.is_complemented( sig ) )
-       return "! ";
-     return "";
-   }
-
- std::vector<signal> foreach_fanout_sig( node const& n )
- {
-   std::vector<signal> sigOut;
-   ntk.foreach_node( [&]( node nd )
-   {
-       ntk.foreach_fanin( nd, [&]( signal sig )
-       {
-                                            if ( ntk.get_node( sig ) == n )
-                                              sigOut.push_back( sig );
-       } );
-   } );
-   ntk.foreach_po( [&]( signal sig )
-   {
-                     if ( ntk.get_node( sig ) == n )
-                       sigOut.push_back( sig );
-   } );
-
-   return sigOut;
- }
-
-   std::vector<signal> foreach_fanout_sig_node( node const& n )
- {
-   std::vector<signal> sigOut;
-   ntk.foreach_node( [&]( node nd )
-                     {
-                       ntk.foreach_fanin( nd, [&]( signal sig )
-                                          {
-                                            if ( ntk.get_node( sig ) == n )
-                                              sigOut.push_back( sig );
-                                          } );
-                     } );
-
-   return sigOut;
- }
-
- std::vector<signal> foreach_fanout_PO(node const& n)
- {
-   std::vector<signal> sigOut;
-   ntk.foreach_po( [&]( signal sig )
-                   {
-                     if ( ntk.get_node( sig ) == n )
-                       sigOut.push_back( sig );
-                   } );
-
-   return sigOut;
- }
 
 private:
   Ntk& ntk;
