@@ -10,7 +10,6 @@
 #include "../networks/aig.hpp"
 #include "../views/depth_view.hpp"
 #include "../views/topo_view.hpp"
-#include <tuple>
 
 namespace mockturtle
 {
@@ -159,7 +158,7 @@ private:
     }
 
     // No common fanins of fanins
-    if(!find)
+    if(!find) //else try three layer ok return true
       return false;
 
     invert_outputs(n);
@@ -180,6 +179,71 @@ private:
       ntk.replace_in_node(B, ntk.get_node(sig_in2), !sig_in2);
 
     ntk.take_out_node(A); //Remove a node from the hash table
+
+    return true;
+  }
+
+  bool try_three_layer_distrib(node const&n, node A, node B, std::vector<signal> signal_lv2_nA, std::vector<signal> signal_lv2_nB)
+  {
+    // Is there a common fanins of fanins of fanins (three layer distributivity)
+    std::vector<signal> signal_lv3;
+    ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(0)), [&](signal sig){signal_lv3.push_back(sig);});
+    ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(1)), [&](signal sig){signal_lv3.push_back(sig);});
+    ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(0)), [&](signal sig){signal_lv3.push_back(sig);});
+    ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(1)), [&](signal sig){signal_lv3.push_back(sig);});
+
+    if(signal_lv3.size() <= 4)
+      return false;
+    if(ntk.fanout_size(ntk.get_node(signal_lv2_nA.at(0))) != 1 || ntk.fanout_size(ntk.get_node(signal_lv2_nA.at(1))) != 1 ||
+      ntk.fanout_size(ntk.get_node(signal_lv2_nB.at(0))) != 1 || ntk.fanout_size(ntk.get_node(signal_lv2_nB.at(1))) != 1 )
+      return false;
+
+    signal common, sig1, sig2, sig3;
+    node C;
+    bool is_common_A;
+    bool find = true;
+    // Is there a common fanins of fanins ?
+    for(int i=0; i<signal_lv3.size(); i++){
+      if(signal_lv3.at(i) == signal_lv2_nA.at(0)){
+        common = signal_lv2_nA.at(0);
+        sig1 = signal_lv2_nA.at(1);
+        C = ntk.get_node(common);
+        ntk.foreach_fanin(C, [&](signal sig){if(sig != common && sig != sig1) sig2 = sig;});
+        ntk.foreach_fanin(B, [&](signal sig){if(sig ) sig3 = sig;});
+        is_common_A = true;
+      }else if(signal_lv3.at(i) == signal_lv2_nA.at(1)){
+        common = signal_lv2_nA.at(1);
+        sig1 = signal_lv2_nA.at(0);
+        C = ntk.get_node(common);
+        is_common_A = true;
+      }else if(signal_lv3.at(i) == signal_lv2_nB.at(0)){
+        common = signal_lv2_nB.at(0);
+        sig1 = signal_lv2_nB.at(1);
+        C = ntk.get_node(common);
+        is_common_A = false;
+      }else if(signal_lv3.at(i) == signal_lv2_nB.at(1)){
+        common = signal_lv2_nB.at(1);
+        sig1 = signal_lv2_nB.at(0);
+        C = ntk.get_node(common);
+        is_common_A = false;
+      }else{
+
+        find = false;
+      }
+    }
+
+    if(!find)
+      return false;
+
+    invert_outputs(n);
+
+    if(is_common_A = true){
+      ntk.replace_in_node(n, A, common);
+    } else {
+      ntk.replace_in_node(n, B, common);
+      ntk.replace_in_node(A, ntk.get_node(signal_lv2_nA.at(1)), !sig1);
+      ntk.take_out_node(B);
+    }
 
     return true;
   }
