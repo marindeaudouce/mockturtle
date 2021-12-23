@@ -104,7 +104,8 @@ private:
       sig_low2 = signal_lv2.at(0);
     }
 
-    // OR gates instead of AND gates
+    // High2 and Low1 will be exchanged so if High2 is complemented Low1 should also be
+    // and vise versa
     if(ntk.is_complemented(sig_high2))
       sig_low1 = !sig_low1;
     if(ntk.is_complemented(sig_low1))
@@ -128,6 +129,9 @@ private:
     ntk.foreach_fanin(n, [&](signal sig){signal_lv1.push_back(sig);});
     if(signal_lv1.size() != 2)
       return false;
+
+    if(ntk.is_complemented(signal_lv1.at(0)) != ntk.is_complemented(signal_lv1.at(1)))
+      return false; //not completely false
 
     A = ntk.get_node(signal_lv1.at(0));
     B = ntk.get_node(signal_lv1.at(1));
@@ -195,7 +199,7 @@ private:
     bool find = true;
     node C;
 
-    // Extract 3rd layer fanins and check there are at least 4 fanins
+    // Extract 3rd layer fanins and check there are at least 5 fanins
     ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(0)), [&](signal sig){signal_lv3.push_back(sig);});
     ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(1)), [&](signal sig){signal_lv3.push_back(sig);});
     ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(0)), [&](signal sig){signal_lv3.push_back(sig);});
