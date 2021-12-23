@@ -55,6 +55,8 @@ private:
     if ( try_distributivity( n ) )
       return true;
     /* TODO: add more rules here... */
+    if ( try_three_layer_distrib( n ) )
+      return true;
 
     return false;
   }
@@ -161,171 +163,74 @@ private:
     }
 
     // No common fanins of fanins try 3rd layer distributivity
-    if(!find){
-      if(try_three_layer_distrib(n, A, B, signal_lv2_nA, signal_lv2_nB))
-        return true; //currently not working
-      else
-        return false;
-    }else{
-      invert_outputs(n);
-
-      if(ntk.is_complemented(signal_lv1.at(0)))
-        ntk.replace_in_node(n, A, !common);
-      else
-        ntk.replace_in_node(n, A, common);
-
-      if(ntk.is_complemented(common))
-        ntk.replace_in_node(B, ntk.get_node(common), sig_in1);
-      else
-        ntk.replace_in_node(B, ntk.get_node(common), !sig_in1);
-
-      if(ntk.is_complemented(sig_in2))
-        ntk.replace_in_node(B, ntk.get_node(sig_in2), sig_in2);
-      else
-        ntk.replace_in_node(B, ntk.get_node(sig_in2), !sig_in2);
-
-      ntk.take_out_node(A); //Remove A node from the table
-
-      return true;
-    }
-  }
-
-  bool try_three_layer_distrib(node const&n, node A, node B, std::vector<signal> signal_lv2_nA, std::vector<signal> signal_lv2_nB)
-  {
-    std::vector<signal> signal_lv3;
-    std::vector<signal> signal_lv2;
-    signal common, sig1, sig2, sig3;
-    bool is_common_A;
-    bool find = true;
-    node C;
-
-    // Extract 3rd layer fanins and check there are at least 5 fanins
-    ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(0)), [&](signal sig){signal_lv3.push_back(sig);});
-    ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(1)), [&](signal sig){signal_lv3.push_back(sig);});
-    ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(0)), [&](signal sig){signal_lv3.push_back(sig);});
-    ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(1)), [&](signal sig){signal_lv3.push_back(sig);});
-
-    if(signal_lv3.size() <= 4)
-      return false;
-    if(ntk.fanout_size(ntk.get_node(signal_lv2_nA.at(0))) != 1 || ntk.fanout_size(ntk.get_node(signal_lv2_nA.at(1))) != 1 ||
-      ntk.fanout_size(ntk.get_node(signal_lv2_nB.at(0))) != 1 || ntk.fanout_size(ntk.get_node(signal_lv2_nB.at(1))) != 1 )
-      return false;
-
-    // Is there 3rd layer fanins common with a 2nd layer fanin ?
-    for(int i=0; i<signal_lv3.size(); i++){
-      if(signal_lv3.at(i) == signal_lv2_nA.at(0)){
-        is_common_A = true;
-        common = signal_lv2_nA.at(0);
-        sig1 = signal_lv2_nA.at(1);
-        ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(0)), [&](signal sig){signal_lv2.push_back(sig);});
-        if(signal_lv2.size() != 2){
-          C = ntk.get_node(signal_lv2_nB.at(1));
-          sig3 = signal_lv2_nB.at(0);
-          signal_lv2.clear();
-          ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(1)), [&](signal sig){signal_lv2.push_back(sig);});
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        } else {
-          C = ntk.get_node(signal_lv2_nB.at(0));
-          sig3 = signal_lv2_nB.at(1);
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        }
-
-      }else if(signal_lv3.at(i) == signal_lv2_nA.at(1)){
-        is_common_A = true;
-        common = signal_lv2_nA.at(1);
-        sig1 = signal_lv2_nA.at(0);
-        ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(0)), [&](signal sig){signal_lv2.push_back(sig);});
-        if(signal_lv2.size() != 2){
-          C = ntk.get_node(signal_lv2_nB.at(1));
-          sig3 = signal_lv2_nB.at(0);
-          signal_lv2.clear();
-          ntk.foreach_fanin(ntk.get_node(signal_lv2_nB.at(1)), [&](signal sig){signal_lv2.push_back(sig);});
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        } else {
-          C = ntk.get_node(signal_lv2_nB.at(0));
-          sig3 = signal_lv2_nB.at(1);
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        }
-
-      }else if(signal_lv3.at(i) == signal_lv2_nB.at(0)){
-        is_common_A = false;
-        common = signal_lv2_nB.at(0);
-        sig1 = signal_lv2_nB.at(1);
-        ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(0)), [&](signal sig){signal_lv2.push_back(sig);});
-        if(signal_lv2.size() != 2){
-          C = ntk.get_node(signal_lv2_nA.at(0));
-          sig3 = signal_lv2_nA.at(0);
-          signal_lv2.clear();
-          ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(1)), [&](signal sig){signal_lv2.push_back(sig);});
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        } else {
-          C = ntk.get_node(signal_lv2_nA.at(1));
-          sig3 = signal_lv2_nA.at(1);
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        }
-
-      }else if(signal_lv3.at(i) == signal_lv2_nB.at(1)){
-        is_common_A = false;
-        common = signal_lv2_nB.at(1);
-        sig1 = signal_lv2_nB.at(0);
-        ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(0)), [&](signal sig){signal_lv2.push_back(sig);});
-        if(signal_lv2.size() != 2){
-          C = ntk.get_node(signal_lv2_nA.at(0));
-          sig3 = signal_lv2_nA.at(0);
-          signal_lv2.clear();
-          ntk.foreach_fanin(ntk.get_node(signal_lv2_nA.at(1)), [&](signal sig){signal_lv2.push_back(sig);});
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        } else {
-          C = ntk.get_node(signal_lv2_nA.at(1));
-          sig3 = signal_lv2_nA.at(1);
-          if(signal_lv2.at(0) == common)
-            sig2 = signal_lv2.at(1);
-          else
-            sig2 = signal_lv2.at(0);
-        }
-
-      }else{
-        find = false;
-      }
-    }
-
     if(!find)
       return false;
 
     invert_outputs(n);
 
-    if(is_common_A){
+    if(ntk.is_complemented(signal_lv1.at(0)))
+      ntk.replace_in_node(n, A, !common);
+    else
       ntk.replace_in_node(n, A, common);
-      ntk.replace_in_node(B, ntk.get_node(sig3), !sig1);
-      ntk.replace_in_node(C, ntk.get_node(common), sig3);
-      ntk.take_out_node(A);
-    } else {
-      ntk.replace_in_node(n, B, common);
-      ntk.replace_in_node(A, ntk.get_node(sig3), !sig1);
-      ntk.replace_in_node(C, ntk.get_node(common), sig3);
-      ntk.take_out_node(B);
-    }
+
+    if(ntk.is_complemented(common))
+      ntk.replace_in_node(B, ntk.get_node(common), sig_in1);
+    else
+      ntk.replace_in_node(B, ntk.get_node(common), !sig_in1);
+
+    if(ntk.is_complemented(sig_in2))
+      ntk.replace_in_node(B, ntk.get_node(sig_in2), sig_in2);
+    else
+      ntk.replace_in_node(B, ntk.get_node(sig_in2), !sig_in2);
+
+    ntk.take_out_node(A); //Remove A node from the table
+
+    return true;
+  }
+
+  bool try_three_layer_distrib(node const&n)
+  {
+    std::vector<signal> signal_lv1, signal_lv2, signal_lv3;
+
+    // Level 1
+	  ntk.foreach_fanin(n, [&](signal sig){signal_lv1.push_back(sig);});
+
+	  if(ntk.level(ntk.get_node(signal_lv1.at(0))) < ntk.level(ntk.get_node(signal_lv1.at(1)))) //sort the nodes
+		  std::swap(signal_lv1.at(0), signal_lv1.at(1));
+
+	  if(ntk.level(ntk.get_node(signal_lv1.at(1)))+3 > ntk.level(ntk.get_node(signal_lv1.at(0))))
+      return false;
+    if(!ntk.is_on_critical_path(ntk.get_node(signal_lv1.at(0))) || ntk.is_on_critical_path(ntk.get_node(signal_lv1.at(1))))
+      return false;
+    if(!ntk.is_complemented(signal_lv1.at(0)))
+  		return false;
+
+    // Level 2
+    ntk.foreach_fanin(ntk.get_node(signal_lv1.at(0)), [&](signal sig){signal_lv2.push_back(sig);});
+
+  	if(ntk.level(ntk.get_node(signal_lv2.at(0))) < ntk.level(ntk.get_node(signal_lv2.at(1)))) //sort the nodes
+  		std::swap(signal_lv2.at(0), signal_lv2.at(1));
+    if(!ntk.is_on_critical_path(ntk.get_node(signal_lv2.at(0))) || ntk.is_on_critical_path(ntk.get_node(signal_lv2.at(1))))
+      return false;
+  	if(!ntk.is_complemented(signal_lv2.at(0)))
+  		return false;
+
+    // Level 3
+	  ntk.foreach_fanin(ntk.get_node(signal_lv2.at(0)), [&](signal sig) {signal_lv3.push_back(sig);});
+
+	  if(ntk.level(ntk.get_node(signal_lv3.at(0))) < ntk.level(ntk.get_node(signal_lv3.at(1)))) //sort nodes
+      std::swap(signal_lv3.at(0), signal_lv3.at(1));
+    if(!ntk.is_on_critical_path(ntk.get_node(signal_lv3.at(0))) || ntk.is_on_critical_path(ntk.get_node(signal_lv3.at(1))))
+      return false;
+
+    //create new circuit
+    signal new_lv1, new_lv21, new_lv22, new_lv3;
+    new_lv1 = ntk.create_and(signal_lv3.at(1), signal_lv1.at(1));
+    new_lv21 = ntk.create_nand(!signal_lv2.at(1), signal_lv1.at(1));
+    new_lv22 = ntk.create_nand(signal_lv3.at(0), new_lv1);
+  	new_lv3 = ntk.create_nand(new_lv21, new_lv22);
+
+	  ntk.substitute_node(n, new_lv3);
 
     return true;
   }
